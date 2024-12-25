@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
+    <title>莉莉丝的赛博小屋</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <style>
+        .comment-feed {
+            margin-top: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .toggle-comments {
+            background-color: #f0f0f0;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .toggle-comments:hover {
+            background-color: #e0e0e0;
+        }
+
+        .comments-container {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .comment {
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .user-comment {
+            background-color: #d4f8d4; /* Light green for user comments */
+        }
+
+        .gpt-comment {
+            background-color: #ffffff; /* White for GPT comments */
+        }
+
+        .comment p {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+
+        .comment time {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .comment-form {
+            margin-top: 15px;
+            display: flex;
+        }
+
+        #new-comment {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px 0 0 5px;
+            font-size: 14px;
+        }
+
+        #comment-form button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 0 5px 5px 0;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #comment-form button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="image-container">
+            <img id="animeImage" src="{{ url_for('static', filename='images/pic.png') }}" alt="Anime character">
+        </div>
+        <div class="text-container">
+            <h1 id="message">{{ event }}</h1>
+            <p id="comment">{{ comment }}</p>
+            <div id="time" class="time">{{ current_time }}</div>
+        </div>
+        <div id="comment-feed" class="comment-feed">
+            <button id="toggle-comments" class="toggle-comments">
+                <span class="chevron-up" style="display: none;">&#9650;</span>
+                <span class="chevron-down">&#9660;</span>
+                <span id="toggle-text">展开评论</span>
+            </button>
+            <div id="comments-container" class="comments-container">
+                <div id="comments" class="comments"></div>
+            </div>
+            <div class="comment-form">
+                <form id="comment-form">
+                    <input type="text" id="new-comment" placeholder="发送评论..." required>
+                    <button type="submit">发送</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script>
+        function playGptSound() {
+            const audio = new Audio("{{ url_for('static', filename='sounds/beep.mp3') }}");
+            audio.play().catch(error => {
+                console.error("音频无法播放：", error);
+            });
+        }
+        function updateTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const timeString = `${hours}:${minutes}:${seconds}`;
+            document.getElementById('time').textContent = timeString;
+        }
+
+        // 立即更新时间，然后每秒更新一次
+        updateTime();
+        setInterval(updateTime, 1000);
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // 自动刷新图片逻辑
+            const imgElement = document.getElementById('animeImage');
+
+            function refreshImage() {
+                const timestamp = new Date().getTime();
+                const originalSrc = imgElement.src.split('?')[0];
+                imgElement.src = `${originalSrc}?t=${timestamp}`;
+            }
+
+            setInterval(refreshImage, 5000);
+
+            // 评论折叠逻辑
+            const toggleButton = document.getElementById('toggle-comments');
+            const commentsContainer = document.getElementById('comments-container');
+            const toggleText = document.getElementById('toggle-text');
+            const chevronUp = document.querySelector('.chevron-up');
+            const chevronDown = document.querySelector('.chevron-down');
+
+            function toggleComments(show) {
+                if (show) {
+                    commentsContainer.style.display = 'block';
+                    toggleText.textContent = '收起评论';
+                    chevronUp.style.display = 'inline';
+                    chevronDown.style.display = 'none';
+                } else {
+                    commentsContainer.style.display = 'none';
+                    toggleText.textContent = '展开评论';
+                    chevronUp.style.display = 'none';
+                    chevronDown.style.display = 'inline';
+                }
+            }
+
+            toggleButton.addEventListener('click', function () {
+                toggleComments(commentsContainer.style.display === 'none' || commentsContainer.style.display === '');
+            });
+
+            // 发送评论逻辑
+            const commentForm = document.getElementById('comment-form');
+            const newCommentInput = document.getElementById('new-comment');
+            const comments = document.getElementById('comments');
+
+            commentForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const commentText = newCommentInput.value.trim();
+                if (commentText) {
+                    // Display the user's comment immediately
+                    const userComment = document.createElement('div');
+                    userComment.className = 'comment user-comment';
+                    userComment.innerHTML = `
+                        <p>${commentText}</p>
+                        <time>${new Date().toLocaleTimeString()}</time>
+                    `;
+                    comments.appendChild(userComment);
+
+                    // Ensure the comments section is expanded
+                    toggleComments(true);
+
+                    // Scroll to the latest comment
+                    commentsContainer.scrollTop = commentsContainer.scrollHeight;
+
+                    // Clear input field
+                    newCommentInput.value = '';
+
+                    // Send the comment to the server and get GPT response
+                    const response = await fetch('/submit_comment', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ comment: commentText })
+                    });
+
+                    const data = await response.json();
+                    playGptSound();
+
+                    // Display the GPT's response
+                    const gptComment = document.createElement('div');
+                    gptComment.className = 'comment gpt-comment';
+                    gptComment.innerHTML = `
+                        <p>${data.gpt_response}</p>
+                        <time>${new Date().toLocaleTimeString()}</time>
+                    `;
+                    comments.appendChild(gptComment);
+
+                    // Scroll to the latest comment
+                    commentsContainer.scrollTop = commentsContainer.scrollHeight;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
